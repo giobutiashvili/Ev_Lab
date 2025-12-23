@@ -1,48 +1,46 @@
-# Base image PHP 8.1 + Apache
 FROM php:8.1-apache
 
-# Set working directory
+# Workdir
 WORKDIR /var/www/html
 
-# Install system dependencies
+# Apache rewrite (Laravel routing)
+RUN a2enmod rewrite
+
+# System deps + PHP extensions (ONLY REQUIRED)
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
-    libzip-dev \
     zip \
     curl \
+    libzip-dev \
+    libonig-dev \
+    nodejs \
     npm \
-    && docker-php-ext-install pdo_mysql zip
+    && docker-php-ext-install pdo_mysql zip mbstring
 
-# Enable Apache mod_rewrite
-RUN a2enmod rewrite
-
-RUN apt-get update && apt-get install -y unzip git libzip-dev zip curl \
-    && docker-php-ext-install pdo_mysql zip mbstring tokenizer ctype xml
-RUN mkdir -p /var/www/html/vendor && chown -R www-data:www-data /var/www/html
-
-RUN mkdir -p /var/www/html/vendor \
-    && chown -R www-data:www-data /var/www/html
-# Copy composer.lock and composer.json
-COPY composer.json composer.lock ./
-
-RUN docker-php-ext-install pdo_mysql zip mbstring tokenizer ctype xml
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-RUN composer install --no-dev --optimize-autoloader
 
-# Copy application code
+# Copy project
 COPY . .
 
-# Install Node dependencies & build assets
-RUN npm install
-RUN npm run build
+# PHP deps
+RUN composer install --no-dev --optimize-autoloader
 
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+# Frontend build
+RUN npm install && npm run build
 
-# Expose port 80
+# Permissions
+RUN chown -R www-data:www-data \
+    storage \
+    bootstrap/cache
+
+# Apache serves /public
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
+RUN sed -ri -e 's!/var/www/html!/var/www/html/public!g' \
+    /etc/apache2/sites-available/*.conf \
+    /etc/apache2/apache2.conf
+
 EXPOSE 80
 
-# Start Apache
 CMD ["apache2-foreground"]
